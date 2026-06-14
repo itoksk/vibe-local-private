@@ -295,9 +295,9 @@ class TestConfig:
 
     def test_get_model_tier_exact_tag_precedence(self):
         """Exact tag resolves to its own tier, not the first same-family entry."""
-        # gemma4:e4b is Tier D, not Tier B (gemma4:31b)
-        assert vc.Config.get_model_tier("gemma4:e4b") == ("D", 8)
-        assert vc.Config.get_model_tier("gemma4:e2b") == ("E", 6)
+        # gemma4:e4b resolves to its own tier (C), not Tier B (gemma4:31b)
+        assert vc.Config.get_model_tier("gemma4:e4b") == ("C", 16)
+        assert vc.Config.get_model_tier("gemma4:e2b") == ("D", 12)
         assert vc.Config.get_model_tier("gemma4:31b") == ("B", 32)
         # qwen3:8b is Tier D, not Tier A (qwen3:235b)
         assert vc.Config.get_model_tier("qwen3:8b") == ("D", 8)
@@ -313,8 +313,8 @@ class TestConfig:
             "gemma4:31b": 32,
             "gemma4:26b": 24,
             "gemma4:12b": 16,
-            "gemma4:e4b": 8,
-            "gemma4:e2b": 6,
+            "gemma4:e4b": 16,  # ~9.6GB on disk → 16GB+ machine
+            "gemma4:e2b": 12,  # ~7.2GB on disk → 12GB+ machine
         }
         names = {n: r for n, r, _t in vc.Config.MODEL_TIERS}
         for name, min_ram in expected.items():

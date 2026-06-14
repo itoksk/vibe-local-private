@@ -1011,18 +1011,21 @@ class Config:
         # Gemma 4 (general-purpose + multimodal). Listed after the Qwen coding
         # models so coding-specialised models stay preferred at the same tier,
         # but Gemma is still auto-selected when it's the available family.
-        ("gemma4:31b",               32, "B"),  # dense 30.7B, multimodal
-        ("gemma4:26b",               24, "C"),  # MoE 25.2B (3.8B active), fast
-        ("gemma4:12b",               16, "C"),
+        # NOTE: the "effective" e-models ship large on disk (e2b≈7.2GB,
+        # e4b≈9.6GB — heavier than qwen3:8b), so their min-RAM gates are set
+        # from actual file size (≈size×1.5), NOT from the tiny param count.
+        ("gemma4:31b",               32, "B"),  # dense 30.7B (~19GB), multimodal
+        ("gemma4:26b",               24, "C"),  # MoE 25.2B (3.8B active, ~17GB), fast
+        ("gemma4:12b",               16, "C"),  # ~7.6GB
+        ("gemma4:e4b",               16, "C"),  # =gemma4:latest, ~9.6GB, multimodal
+        ("gemma4:e2b",               12, "D"),  # ~7.2GB, multimodal
         # Tier D — Lightweight: fast, decent quality
         ("qwen3:8b",                  8, "D"),
-        ("gemma4:e4b",                8, "D"),  # =gemma4:latest, multimodal
         ("llama3.1:8b",               8, "D"),
         ("deepseek-coder:6.7b",       8, "D"),
         ("codellama:7b",              8, "D"),
         # Tier E — Minimal: runs on anything
         ("qwen3:4b",                  4, "E"),
-        ("gemma4:e2b",                6, "E"),  # effective 2.3B, multimodal
         ("qwen3:1.7b",                2, "E"),
         ("llama3.2:3b",               4, "E"),
     ]

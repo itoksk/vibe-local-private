@@ -102,13 +102,15 @@ vibe-local --model gemma4:12b      # 16GB+ 推奨
 vibe-local --model gemma4:31b      # 32GB+ 推奨
 ```
 
-| gemma4タグ | パラメータ | 目安メモリ | 既定ctx | 備考 |
-|---|---|---|---|---|
-| `gemma4:e2b` | 2.3B | 8GB | 32K | 最小・高速 |
-| `gemma4:e4b`（=latest） | 4.5B | 8GB+ | 32K | バランス型 |
-| `gemma4:12b` | 12B | 16GB+ | 64K | |
-| `gemma4:26b` | 25.2B (MoE/3.8B稼働) | 24GB+ | 64K | 大きい割に高速 |
-| `gemma4:31b` | 30.7B | 32GB+ | 64K | 最高精度 |
+| gemma4タグ | パラメータ | ディスク | 目安メモリ | 既定ctx | 備考 |
+|---|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 7.2GB | 12GB+ | 32K | 最小（ファイルは大きめ） |
+| `gemma4:e4b`（=latest） | 4.5B | 9.6GB | 16GB+ | 32K | バランス型 |
+| `gemma4:12b` | 12B | 7.6GB | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B稼働) | 17GB | 24GB+ | 64K | 大きい割に高速 |
+| `gemma4:31b` | 30.7B | 19GB | 32GB+ | 64K | 最高精度 |
+
+> ⚠️ Gemma 4 の e2b/e4b は「軽量モデル」ですが**ディスク／ロードサイズが大きい**（e2b≈7.2GB・e4b≈9.6GB、qwen3:8b より重い）ため、**8GBメモリのマシンでは動きません**。8GB機は `qwen3:1.7b` 等を使ってください。
 
 - ネイティブ128K/256Kコンテキストに対応。省メモリのため既定値は控えめなので、`--context-window 131072` 等で引き上げられます。
 - Gemma 4 は思考（reasoning）モードを持ちますが、エージェント用途では**既定で無効**にしています（思考でトークンを使い切り回答が空になるのを防ぐため）。`--think` で有効化、`--no-think` で明示的に無効化、設定ファイルで `THINKING=true/false/auto` も指定できます。
@@ -333,13 +335,15 @@ vibe-local --model gemma4:12b      # 16GB+ recommended
 vibe-local --model gemma4:31b      # 32GB+ recommended
 ```
 
-| gemma4 tag | Params | Min RAM | Default ctx | Notes |
-|---|---|---|---|---|
-| `gemma4:e2b` | 2.3B | 8GB | 32K | Smallest, fastest |
-| `gemma4:e4b` (=latest) | 4.5B | 8GB+ | 32K | Balanced |
-| `gemma4:12b` | 12B | 16GB+ | 64K | |
-| `gemma4:26b` | 25.2B (MoE/3.8B active) | 24GB+ | 64K | Fast for its size |
-| `gemma4:31b` | 30.7B | 32GB+ | 64K | Highest quality |
+| gemma4 tag | Params | Disk | Min RAM | Default ctx | Notes |
+|---|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 7.2GB | 12GB+ | 32K | Smallest (large file) |
+| `gemma4:e4b` (=latest) | 4.5B | 9.6GB | 16GB+ | 32K | Balanced |
+| `gemma4:12b` | 12B | 7.6GB | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B active) | 17GB | 24GB+ | 64K | Fast for its size |
+| `gemma4:31b` | 30.7B | 19GB | 32GB+ | 64K | Highest quality |
+
+> ⚠️ Despite being "small" models, Gemma 4 e2b/e4b have **large disk/load sizes** (e2b≈7.2GB, e4b≈9.6GB — heavier than qwen3:8b), so they **won't run on an 8GB machine**. Use `qwen3:1.7b` etc. on 8GB.
 
 - Native context is 128K/256K. Defaults are conservative to save memory — raise with e.g. `--context-window 131072`.
 - Gemma 4 has a thinking/reasoning mode, but it is **disabled by default** for agent use (so reasoning doesn't exhaust the token budget and leave an empty reply). Enable with `--think`, force off with `--no-think`, or set `THINKING=true/false/auto` in the config file.
@@ -476,13 +480,15 @@ vibe-local --model gemma4:12b      # 建议 16GB+
 vibe-local --model gemma4:31b      # 建议 32GB+
 ```
 
-| gemma4 标签 | 参数 | 建议内存 | 默认ctx | 备注 |
-|---|---|---|---|---|
-| `gemma4:e2b` | 2.3B | 8GB | 32K | 最小·最快 |
-| `gemma4:e4b`（=latest） | 4.5B | 8GB+ | 32K | 均衡 |
-| `gemma4:12b` | 12B | 16GB+ | 64K | |
-| `gemma4:26b` | 25.2B (MoE/3.8B 激活) | 24GB+ | 64K | 体量大但较快 |
-| `gemma4:31b` | 30.7B | 32GB+ | 64K | 最高质量 |
+| gemma4 标签 | 参数 | 磁盘 | 建议内存 | 默认ctx | 备注 |
+|---|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 7.2GB | 12GB+ | 32K | 最小（文件较大） |
+| `gemma4:e4b`（=latest） | 4.5B | 9.6GB | 16GB+ | 32K | 均衡 |
+| `gemma4:12b` | 12B | 7.6GB | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B 激活) | 17GB | 24GB+ | 64K | 体量大但较快 |
+| `gemma4:31b` | 30.7B | 19GB | 32GB+ | 64K | 最高质量 |
+
+> ⚠️ 虽然是"轻量"模型，Gemma 4 e2b/e4b 的**磁盘/加载体积较大**（e2b≈7.2GB、e4b≈9.6GB，比 qwen3:8b 更重），因此**无法在 8GB 内存的机器上运行**。8GB 机器请使用 `qwen3:1.7b` 等。
 
 - 原生支持 128K/256K 上下文。为节省内存默认值较保守，可用 `--context-window 131072` 等提高。
 - Gemma 4 具有思考（reasoning）模式，但智能体场景下**默认关闭**（避免思考耗尽 token 导致空回复）。用 `--think` 开启、`--no-think` 关闭，或在配置文件中设置 `THINKING=true/false/auto`。
