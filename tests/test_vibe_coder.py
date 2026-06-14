@@ -293,6 +293,133 @@ class TestConfig:
         tier, ram = vc.Config.get_model_tier("unknown-model:99b")
         assert tier is None
 
+    def test_get_model_tier_exact_tag_precedence(self):
+        """Exact tag resolves to its own tier, not the first same-family entry."""
+        # gemma4:e4b is Tier D, not Tier B (gemma4:31b)
+        assert vc.Config.get_model_tier("gemma4:e4b") == ("D", 8)
+        assert vc.Config.get_model_tier("gemma4:e2b") == ("E", 6)
+        assert vc.Config.get_model_tier("gemma4:31b") == ("B", 32)
+        # qwen3:8b is Tier D, not Tier A (qwen3:235b)
+        assert vc.Config.get_model_tier("qwen3:8b") == ("D", 8)
+        # Unknown tag within a known family falls back to a family entry
+        tier, _ = vc.Config.get_model_tier("gemma4:99b")
+        assert tier is not None
+
+    # ---- Gemma 4 support ----
+
+    def test_gemma4_registered_in_tiers(self):
+        """All gemma4 tags are registered with sensible min-RAM gates."""
+        expected = {
+            "gemma4:31b": 32,
+            "gemma4:26b": 24,
+            "gemma4:12b": 16,
+            "gemma4:e4b": 8,
+            "gemma4:e2b": 6,
+        }
+        names = {n: r for n, r, _t in vc.Config.MODEL_TIERS}
+        for name, min_ram in expected.items():
+            assert name in names, f"{name} missing from MODEL_TIERS"
+            assert names[name] == min_ram
+
+    def test_gemma4_context_windows(self):
+        """gemma4 tags resolve to conservative context windows."""
+        cfg = vc.Config()
+        cfg.context_window = cfg.DEFAULT_CONTEXT_WINDOW
+        cfg._apply_context_window("gemma4:e2b")
+        assert cfg.context_window == 32768
+        for tag in ("gemma4:12b", "gemma4:26b", "gemma4:31b"):
+            cfg.context_window = cfg.DEFAULT_CONTEXT_WINDOW
+            cfg._apply_context_window(tag)
+            assert cfg.context_window == 65536, tag
+        # bare tag / :latest / cloud variant all resolve
+        cfg.context_window = cfg.DEFAULT_CONTEXT_WINDOW
+        cfg._apply_context_window("gemma4:latest")
+        assert cfg.context_window == 32768
+        cfg.context_window = cfg.DEFAULT_CONTEXT_WINDOW
+        cfg._apply_context_window("gemma4:31b-cloud")
+        assert cfg.context_window == 65536
+
+    def test_gemma4_auto_selected_when_only_family(self):
+        """Gemma is auto-selected when it's the available family at a tier."""
+        cfg = vc.Config()
+        cfg.model = ""
+        original = vc._get_ram_gb
+        orig_query = vc.Config._query_installed_models
+        try:
+            vc._get_ram_gb = lambda: 16
+            vc.Config._query_installed_models = lambda self: ["gemma4:12b", "gemma4:e4b"]
+            cfg._auto_detect_model()
+        finally:
+            vc._get_ram_gb = original
+            vc.Config._query_installed_models = orig_query
+        assert cfg.model == "gemma4:12b"
+
+    def test_qwen_coder_preferred_over_gemma(self):
+        """Coding-specialised Qwen stays preferred when both are installed."""
+        cfg = vc.Config()
+        cfg.model = ""
+        original = vc._get_ram_gb
+        orig_query = vc.Config._query_installed_models
+        try:
+            vc._get_ram_gb = lambda: 32
+            vc.Config._query_installed_models = lambda self: [
+                "qwen3-coder:30b", "gemma4:31b", "gemma4:12b"
+            ]
+            cfg._auto_detect_model()
+        finally:
+            vc._get_ram_gb = original
+            vc.Config._query_installed_models = orig_query
+        assert cfg.model == "qwen3-coder:30b"
+
+    def test_gemma4_sidecar_fallback(self):
+        """Gemma e-model is picked as sidecar when no Qwen small is installed."""
+        cfg = vc.Config()
+        cfg.model = ""
+        cfg.sidecar_model = ""
+        original = vc._get_ram_gb
+        orig_query = vc.Config._query_installed_models
+        try:
+            vc._get_ram_gb = lambda: 32
+            vc.Config._query_installed_models = lambda self: ["gemma4:31b", "gemma4:e2b"]
+            cfg._auto_detect_model()
+        finally:
+            vc._get_ram_gb = original
+            vc.Config._query_installed_models = orig_query
+        assert cfg.model == "gemma4:31b"
+        assert cfg.sidecar_model == "gemma4:e2b"
+
+    def test_is_thinking_model(self):
+        """Only gemma4 is treated as a thinking-field family."""
+        assert vc.Config.is_thinking_model("gemma4:e4b") is True
+        assert vc.Config.is_thinking_model("gemma4:31b-cloud") is True
+        assert vc.Config.is_thinking_model("gemma3:12b") is False
+        assert vc.Config.is_thinking_model("qwen3-coder:30b") is False
+        assert vc.Config.is_thinking_model("") is False
+
+    def test_resolve_think(self):
+        """resolve_think: auto disables thinking for gemma4, leaves others alone."""
+        # Auto (None): gemma4 -> False, others -> None (omit field)
+        assert vc.Config.resolve_think("gemma4:e4b", None) is False
+        assert vc.Config.resolve_think("qwen3:8b", None) is None
+        # Explicit user setting always honoured
+        assert vc.Config.resolve_think("gemma4:e4b", True) is True
+        assert vc.Config.resolve_think("qwen3:8b", False) is False
+
+    def test_think_config_parsing(self):
+        """THINKING config key / --think / --no-think parse to tri-state."""
+        assert vc.Config._parse_bool("off") is False
+        assert vc.Config._parse_bool("true") is True
+        assert vc.Config._parse_bool("auto") is None
+        cfg = vc.Config()
+        cfg._load_cli_args(["--no-think"])
+        assert cfg.think is False
+        cfg2 = vc.Config()
+        cfg2._load_cli_args(["--think"])
+        assert cfg2.think is True
+        cfg3 = vc.Config()
+        cfg3._load_cli_args([])
+        assert cfg3.think is None
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 2. ReadTool
@@ -1441,6 +1568,96 @@ class TestNativeApiConversion:
         # Arguments should be a JSON string
         args = json.loads(tcs[0]["function"]["arguments"])
         assert args == {"file_path": "/tmp/a.txt"}
+
+    def test_native_response_thinking_fallback(self):
+        """Empty content + no tool calls + thinking field -> surface thinking."""
+        native = {
+            "message": {"role": "assistant", "content": "", "thinking": "reasoned answer"},
+            "done": True,
+        }
+        result = vc.OllamaClient._native_to_openai_response(native)
+        assert result["choices"][0]["message"]["content"] == "reasoned answer"
+
+    def test_native_response_thinking_ignored_when_content_present(self):
+        """Thinking is NOT used when real content exists."""
+        native = {
+            "message": {"role": "assistant", "content": "real", "thinking": "scratch"},
+            "done": True,
+        }
+        result = vc.OllamaClient._native_to_openai_response(native)
+        assert result["choices"][0]["message"]["content"] == "real"
+
+    def test_native_response_thinking_ignored_when_tool_calls(self):
+        """Thinking is NOT used as content when a tool call is present."""
+        native = {
+            "message": {
+                "role": "assistant", "content": "", "thinking": "scratch",
+                "tool_calls": [{"function": {"name": "Read", "arguments": {"file_path": "/x"}}}],
+            },
+            "done": True,
+        }
+        result = vc.OllamaClient._native_to_openai_response(native)
+        assert result["choices"][0]["message"]["content"] == ""
+        assert "tool_calls" in result["choices"][0]["message"]
+
+    def test_chat_payload_sends_think_false_for_gemma(self):
+        """chat() adds think:false for gemma4 in auto mode; omits it for qwen."""
+        import urllib.error
+        import urllib.request
+        captured = {}
+
+        def fake_urlopen(req, timeout=None):
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            raise urllib.error.URLError("stop-after-capture")
+
+        cfg = vc.Config()
+        cfg.model = "gemma4:e4b"
+        client = vc.OllamaClient(cfg)
+        with mock.patch.object(vc.urllib.request, "urlopen", fake_urlopen):
+            try:
+                client.chat("gemma4:e4b", [{"role": "user", "content": "hi"}], stream=False)
+            except Exception:
+                pass
+        assert captured["body"].get("think") is False
+
+        captured.clear()
+        client2 = vc.OllamaClient(vc.Config())
+        with mock.patch.object(vc.urllib.request, "urlopen", fake_urlopen):
+            try:
+                client2.chat("qwen3:8b", [{"role": "user", "content": "hi"}], stream=False)
+            except Exception:
+                pass
+        assert "think" not in captured["body"]
+
+    def test_iter_ndjson_wraps_thinking_in_think_tags(self):
+        """Streaming `thinking` deltas are wrapped in synthetic <think></think>."""
+        lines = [
+            json.dumps({"message": {"thinking": "pondering"}, "done": False}),
+            json.dumps({"message": {"content": "answer"}, "done": True}),
+        ]
+        cfg = vc.Config()
+        client = vc.OllamaClient(cfg)
+
+        class _Resp:
+            def __init__(self, data):
+                self._data = data.encode("utf-8")
+                self._read = False
+
+            def read(self, n=-1):
+                if self._read:
+                    return b""
+                self._read = True
+                return self._data
+
+            def close(self):
+                pass
+
+        resp = _Resp("\n".join(lines) + "\n")
+        out = "".join(
+            c["choices"][0]["delta"].get("content", "")
+            for c in client._iter_ndjson(resp)
+        )
+        assert out == "<think>pondering</think>answer"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

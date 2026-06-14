@@ -92,6 +92,27 @@ vibe-local --model qwen3:8b
 
 > サイドカーモデル = 権限チェックや初期化プローブなど軽量タスク用。自動選択されます。
 
+#### Gemma 4 を使う（Google・マルチモーダル対応）
+
+`gemma4` シリーズ（`e2b` / `e4b` / `12b` / `26b` / `31b`）も自動検出・手動指定に対応しています。
+
+```bash
+vibe-local --model gemma4:e4b      # =gemma4:latest（約4.5B・画像対応）
+vibe-local --model gemma4:12b      # 16GB+ 推奨
+vibe-local --model gemma4:31b      # 32GB+ 推奨
+```
+
+| gemma4タグ | パラメータ | 目安メモリ | 既定ctx | 備考 |
+|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 8GB | 32K | 最小・高速 |
+| `gemma4:e4b`（=latest） | 4.5B | 8GB+ | 32K | バランス型 |
+| `gemma4:12b` | 12B | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B稼働) | 24GB+ | 64K | 大きい割に高速 |
+| `gemma4:31b` | 30.7B | 32GB+ | 64K | 最高精度 |
+
+- ネイティブ128K/256Kコンテキストに対応。省メモリのため既定値は控えめなので、`--context-window 131072` 等で引き上げられます。
+- Gemma 4 は思考（reasoning）モードを持ちますが、エージェント用途では**既定で無効**にしています（思考でトークンを使い切り回答が空になるのを防ぐため）。`--think` で有効化、`--no-think` で明示的に無効化、設定ファイルで `THINKING=true/false/auto` も指定できます。
+
 ### トラブルシューティング
 
 <details>
@@ -117,8 +138,9 @@ curl -fsSL https://raw.githubusercontent.com/ochyai/vibe-local/main/install.sh |
 **モデルを変更したい**
 ```bash
 nano ~/.config/vibe-local/config
-# MODEL="qwen3:8b" を変更
+# MODEL="qwen3:8b" を変更（例: MODEL="gemma4:e4b"）
 # SIDECAR_MODEL="qwen3:1.7b"  # 軽量タスク用（省略可・自動選択）
+# THINKING="auto"            # Gemma 4 等の思考モード: auto(既定)/true/false
 ```
 
 **デバッグログを確認したい**
@@ -301,6 +323,27 @@ vibe-local --model qwen3:8b
 
 > Sidecar model = auto-selected lighter model for permission checks, init probes, and short summaries.
 
+#### Using Gemma 4 (Google, multimodal)
+
+The `gemma4` family (`e2b` / `e4b` / `12b` / `26b` / `31b`) is supported for both auto-detection and manual selection.
+
+```bash
+vibe-local --model gemma4:e4b      # =gemma4:latest (~4.5B, vision-capable)
+vibe-local --model gemma4:12b      # 16GB+ recommended
+vibe-local --model gemma4:31b      # 32GB+ recommended
+```
+
+| gemma4 tag | Params | Min RAM | Default ctx | Notes |
+|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 8GB | 32K | Smallest, fastest |
+| `gemma4:e4b` (=latest) | 4.5B | 8GB+ | 32K | Balanced |
+| `gemma4:12b` | 12B | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B active) | 24GB+ | 64K | Fast for its size |
+| `gemma4:31b` | 30.7B | 32GB+ | 64K | Highest quality |
+
+- Native context is 128K/256K. Defaults are conservative to save memory — raise with e.g. `--context-window 131072`.
+- Gemma 4 has a thinking/reasoning mode, but it is **disabled by default** for agent use (so reasoning doesn't exhaust the token budget and leave an empty reply). Enable with `--think`, force off with `--no-think`, or set `THINKING=true/false/auto` in the config file.
+
 ### Troubleshooting
 
 <details>
@@ -326,8 +369,9 @@ curl -fsSL https://raw.githubusercontent.com/ochyai/vibe-local/main/install.sh |
 **Change model**
 ```bash
 nano ~/.config/vibe-local/config
-# Change MODEL="qwen3:8b"
+# Change MODEL="qwen3:8b"   (e.g. MODEL="gemma4:e4b")
 # SIDECAR_MODEL="qwen3:1.7b"  # For lightweight tasks (optional, auto-selected)
+# THINKING="auto"            # Reasoning mode for Gemma 4 etc: auto(default)/true/false
 ```
 
 **Enable debug logging**
@@ -422,6 +466,27 @@ vibe-local --model qwen3:8b
 
 > 边车模型 = 用于权限检查、初始化探测等轻量任务的自动选择的较小模型。
 
+#### 使用 Gemma 4（Google·多模态）
+
+支持 `gemma4` 系列（`e2b` / `e4b` / `12b` / `26b` / `31b`）的自动检测与手动指定。
+
+```bash
+vibe-local --model gemma4:e4b      # =gemma4:latest（约4.5B·支持图像）
+vibe-local --model gemma4:12b      # 建议 16GB+
+vibe-local --model gemma4:31b      # 建议 32GB+
+```
+
+| gemma4 标签 | 参数 | 建议内存 | 默认ctx | 备注 |
+|---|---|---|---|---|
+| `gemma4:e2b` | 2.3B | 8GB | 32K | 最小·最快 |
+| `gemma4:e4b`（=latest） | 4.5B | 8GB+ | 32K | 均衡 |
+| `gemma4:12b` | 12B | 16GB+ | 64K | |
+| `gemma4:26b` | 25.2B (MoE/3.8B 激活) | 24GB+ | 64K | 体量大但较快 |
+| `gemma4:31b` | 30.7B | 32GB+ | 64K | 最高质量 |
+
+- 原生支持 128K/256K 上下文。为节省内存默认值较保守，可用 `--context-window 131072` 等提高。
+- Gemma 4 具有思考（reasoning）模式，但智能体场景下**默认关闭**（避免思考耗尽 token 导致空回复）。用 `--think` 开启、`--no-think` 关闭，或在配置文件中设置 `THINKING=true/false/auto`。
+
 ### 故障排除
 
 <details>
@@ -447,8 +512,9 @@ curl -fsSL https://raw.githubusercontent.com/ochyai/vibe-local/main/install.sh |
 **更换模型**
 ```bash
 nano ~/.config/vibe-local/config
-# 修改 MODEL="qwen3:8b"
+# 修改 MODEL="qwen3:8b"     （例如 MODEL="gemma4:e4b"）
 # SIDECAR_MODEL="qwen3:1.7b"  # 轻量任务用（可选，自动选择）
+# THINKING="auto"            # Gemma 4 等思考模式：auto(默认)/true/false
 ```
 
 **启用调试日志**

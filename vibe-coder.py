@@ -707,6 +707,11 @@ class Config:
         self.max_tokens = self.DEFAULT_MAX_TOKENS
         self.temperature = self.DEFAULT_TEMPERATURE
         self.context_window = self.DEFAULT_CONTEXT_WINDOW
+        # Reasoning/"thinking" control for hybrid-thinking models (e.g. Gemma 4).
+        #   None = auto: thinking is disabled for Gemma so the agent loop gets a
+        #   final answer in `content` instead of an empty body when the thinking
+        #   budget is exhausted.  True/False force it on/off.
+        self.think = None
         self.prompt = None          # -p one-shot prompt
         self.yes_mode = False       # -y auto-approve
         self.debug = False
@@ -801,8 +806,24 @@ class Config:
                             self.context_window = int(val)
                         except ValueError:
                             pass
+                    elif key == "THINKING" and val:
+                        parsed = self._parse_bool(val)
+                        if parsed is not None:
+                            self.think = parsed
         except (OSError, IOError):
             pass  # Config file unreadable — skip silently
+
+    @staticmethod
+    def _parse_bool(val):
+        """Parse a tri-state boolean string. Returns True/False, or None if unset/auto."""
+        v = str(val).strip().lower()
+        if v in ("1", "true", "yes", "on"):
+            return True
+        if v in ("0", "false", "no", "off"):
+            return False
+        if v in ("auto", ""):
+            return None
+        return None
 
     def _load_env(self):
         if os.environ.get("OLLAMA_HOST"):
@@ -818,6 +839,8 @@ class Config:
             self.sidecar_model = os.environ["VIBE_LOCAL_SIDECAR_MODEL"]
         if os.environ.get("VIBE_CODER_DEBUG") == "1" or os.environ.get("VIBE_LOCAL_DEBUG") == "1":
             self.debug = True
+        if os.environ.get("VIBE_LOCAL_THINKING"):
+            self.think = self._parse_bool(os.environ["VIBE_LOCAL_THINKING"])
 
     def _load_cli_args(self, argv=None):
         # Strip full-width spaces from args (common with Japanese IME input)
@@ -851,6 +874,10 @@ class Config:
         parser.add_argument("--max-tokens", type=int, help="Max output tokens")
         parser.add_argument("--temperature", type=float, help="Sampling temperature")
         parser.add_argument("--context-window", type=int, help="Context window size")
+        parser.add_argument("--think", dest="think", action="store_true", default=None,
+                            help="Enable model reasoning/thinking (Gemma 4 etc.)")
+        parser.add_argument("--no-think", dest="think", action="store_false",
+                            help="Disable model reasoning/thinking")
         parser.add_argument("--version", action="version", version=f"vibe-coder {__version__}")
         parser.add_argument("--dangerously-skip-permissions", action="store_true",
                             help="Alias for -y (compatibility)")
@@ -890,6 +917,8 @@ class Config:
             self.temperature = args.temperature
         if args.context_window is not None:
             self.context_window = args.context_window
+        if args.think is not None:
+            self.think = args.think
         # RAG args
         if args.rag:
             self.rag = True
@@ -923,6 +952,12 @@ class Config:
         "qwen2.5:72b": 131072,
         "deepseek-r1:70b": 131072,
         "qwen3:32b": 32768,
+        # Gemma 4 (Google, multimodal) — native ctx 128K (e-models) / 256K (12b+).
+        #   Conservative defaults to keep KV cache memory in check; raise with
+        #   --context-window up to the model's native maximum on big machines.
+        "gemma4:31b": 65536,
+        "gemma4:26b": 65536,  # MoE 25.2B (3.8B active)
+        "gemma4:12b": 65536,
         # Tier C — Solid (16GB+ RAM)
         "qwen3-coder:30b": 32768,
         "qwen2.5-coder:32b": 32768,
@@ -931,11 +966,14 @@ class Config:
         "starcoder2:15b": 16384,
         # Tier D — Lightweight (8GB+ RAM)
         "qwen3:8b": 32768,
+        "gemma4:e4b": 32768,  # =gemma4:latest, effective 4.5B, multimodal
+        "gemma4": 32768,      # bare tag resolves to e4b
         "llama3.1:8b": 8192,
         "codellama:7b": 16384,
         "deepseek-coder:6.7b": 16384,
         # Tier E — Minimal (4GB+ RAM)
         "qwen3:4b": 8192,
+        "gemma4:e2b": 32768,  # effective 2.3B, multimodal
         "qwen3:1.7b": 4096,
         "llama3.2:3b": 8192,
     }
@@ -970,19 +1008,29 @@ class Config:
         ("qwen2.5-coder:32b",        24, "C"),
         ("starcoder2:15b",           16, "C"),
         ("qwen3:14b",                16, "C"),
+        # Gemma 4 (general-purpose + multimodal). Listed after the Qwen coding
+        # models so coding-specialised models stay preferred at the same tier,
+        # but Gemma is still auto-selected when it's the available family.
+        ("gemma4:31b",               32, "B"),  # dense 30.7B, multimodal
+        ("gemma4:26b",               24, "C"),  # MoE 25.2B (3.8B active), fast
+        ("gemma4:12b",               16, "C"),
         # Tier D — Lightweight: fast, decent quality
         ("qwen3:8b",                  8, "D"),
+        ("gemma4:e4b",                8, "D"),  # =gemma4:latest, multimodal
         ("llama3.1:8b",               8, "D"),
         ("deepseek-coder:6.7b",       8, "D"),
         ("codellama:7b",              8, "D"),
         # Tier E — Minimal: runs on anything
         ("qwen3:4b",                  4, "E"),
+        ("gemma4:e2b",                6, "E"),  # effective 2.3B, multimodal
         ("qwen3:1.7b",                2, "E"),
         ("llama3.2:3b",               4, "E"),
     ]
 
-    # Sidecar candidates (fast + small, used for context compaction)
-    _SIDECAR_CANDIDATES = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "llama3.2:3b"]
+    # Sidecar candidates (fast + small, used for context compaction).
+    # Qwen smalls stay first; Gemma e-models are added as fallbacks.
+    _SIDECAR_CANDIDATES = ["qwen3:8b", "qwen3:4b", "qwen3:1.7b", "llama3.2:3b",
+                           "gemma4:e2b", "gemma4:e4b"]
 
     def _auto_detect_model(self):
         if self.model:
@@ -1076,11 +1124,48 @@ class Config:
                     self.context_window = 65536
                 return
 
+    @staticmethod
+    def is_thinking_model(model_name):
+        """True for hybrid-thinking model families whose reasoning lands in a
+        separate `thinking` field (Ollama native API) rather than `content`.
+
+        Currently Gemma 4 (gemma4:*). Gemma 3 and earlier have no thinking mode.
+        """
+        name = (model_name or "").lower()
+        return name.startswith("gemma4")
+
+    @classmethod
+    def resolve_think(cls, model_name, think_setting):
+        """Decide the value of the native `think` field for a chat request.
+
+        Returns True/False to send explicitly, or None to omit the field
+        (preserving each model's default behaviour).
+
+        - Explicit user setting (True/False) is always honoured.
+        - Auto (None): disable thinking for thinking-models so the agent loop
+          receives a final answer in `content` instead of an empty body when
+          the thinking budget is exhausted.  Non-thinking models are untouched.
+        """
+        if think_setting is not None:
+            return bool(think_setting)
+        if cls.is_thinking_model(model_name):
+            return False
+        return None
+
     @classmethod
     def get_model_tier(cls, model_name):
-        """Get the tier label for a model. Returns (tier, min_ram) or (None, None)."""
+        """Get the tier label for a model. Returns (tier, min_ram) or (None, None).
+
+        Prefers an exact tag / substring match (so "gemma4:e4b" resolves to its
+        own Tier D, not the first "gemma4:*" entry), then falls back to a
+        same-family base-name match for unknown tags within a known family.
+        """
         for name, min_ram, tier in cls.MODEL_TIERS:
-            if name in model_name or model_name.split(":")[0] == name.split(":")[0]:
+            if name == model_name or name in model_name or model_name in name:
+                return tier, min_ram
+        base = model_name.split(":")[0]
+        for name, min_ram, tier in cls.MODEL_TIERS:
+            if name.split(":")[0] == base:
                 return tier, min_ram
         return None, None
 
@@ -1410,6 +1495,7 @@ class OllamaClient:
         self.temperature = config.temperature
         self.context_window = config.context_window
         self.debug = config.debug
+        self.think = config.think  # None=auto, True/False=force reasoning on/off
         self.timeout = 300
         self._supports_tool_streaming = None  # None=untested, True/False=detected
 
@@ -1596,9 +1682,18 @@ class OllamaClient:
                 "type": "function",
                 "function": {"name": fn.get("name", ""), "arguments": args},
             })
+        content = message.get("content", "") or ""
+        # Thinking-model fallback (e.g. Gemma 4 with reasoning left on): if the
+        # body is empty and there are no tool calls but the model produced a
+        # separate `thinking` field, surface it so the user isn't left with a
+        # blank reply.  (With auto think-disable this path normally won't fire.)
+        if not content and not openai_tcs:
+            thinking = message.get("thinking") or ""
+            if thinking:
+                content = thinking
         openai_msg = {
             "role": message.get("role", "assistant"),
-            "content": message.get("content", "") or "",
+            "content": content,
         }
         if openai_tcs:
             openai_msg["tool_calls"] = openai_tcs
@@ -1640,6 +1735,12 @@ class OllamaClient:
         }
         if tools:
             payload["tools"] = tools
+
+        # Reasoning control for hybrid-thinking models (Gemma 4). Omitted for
+        # models where it doesn't apply so their default behaviour is preserved.
+        think = Config.resolve_think(model, self.think)
+        if think is not None:
+            payload["think"] = think
 
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -1708,6 +1809,7 @@ class OllamaClient:
         """
         buf = b""
         MAX_BUF = 1024 * 1024  # 1MB safety limit
+        think_open = False  # tracks a synthetic <think> block from `thinking` deltas
         try:
             while True:
                 try:
@@ -1738,11 +1840,30 @@ class OllamaClient:
                     message = data.get("message", {})
                     done = data.get("done", False)
 
-                    # Build OpenAI-compatible delta
+                    # Build OpenAI-compatible delta. Hybrid-thinking models
+                    # (Gemma 4 with reasoning on) stream a separate `thinking`
+                    # field; wrap it in synthetic <think>…</think> markers so the
+                    # existing reasoning-indicator UI suppresses it. Models that
+                    # never emit `thinking` are byte-for-byte unaffected.
                     delta = {}
-                    content = message.get("content", "")
+                    content = message.get("content", "") or ""
+                    thinking = message.get("thinking", "") or ""
+                    piece = ""
+                    if thinking:
+                        if not think_open:
+                            piece += "<think>"
+                            think_open = True
+                        piece += thinking
                     if content:
-                        delta["content"] = content
+                        if think_open:
+                            piece += "</think>"
+                            think_open = False
+                        piece += content
+                    if done and think_open:
+                        piece += "</think>"
+                        think_open = False
+                    if piece:
+                        delta["content"] = piece
 
                     raw_tool_calls = message.get("tool_calls") or []
                     if raw_tool_calls:
@@ -5858,6 +5979,13 @@ class TUI:
                 _sc_tc = _tier_colors.get(_sc_tier, "250")
                 _sc_tier_str = " %s[Tier %s]%s" % (_ansi(chr(27) + "[38;5;%sm" % _sc_tc), _sc_tier, C.RESET)
             print(f"  🔄 {info_dim}Sidecar{C.RESET} {info_bright}{config.sidecar_model}{C.RESET}{_sc_tier_str}")
+        # Reasoning indicator for hybrid-thinking models (Gemma 4 etc.)
+        if Config.is_thinking_model(config.model) or config.think is not None:
+            _think_eff = Config.resolve_think(config.model, config.think)
+            _think_on = _ansi(chr(27)+"[38;5;46m") + "on" + C.RESET if _think_eff else \
+                        _ansi(chr(27)+"[38;5;250m") + "off" + C.RESET
+            _think_src = "" if config.think is not None else f" {C.DIM}(auto){C.RESET}"
+            print(f"  🧩 {info_dim}Thinking{C.RESET} {_think_on}{_think_src}")
         print(f"  🔒 {info_dim}Mode{C.RESET}   {mode_str}")
         print(f"  🦙 {info_dim}Engine{C.RESET} {info_bright}Ollama{C.RESET} {C.DIM}({config.ollama_host}){C.RESET}")
         print(f"  💾 {info_dim}RAM{C.RESET}    {info_bright}{ram}GB{C.RESET} {C.DIM}(ctx: {config.context_window} tokens){C.RESET}")
