@@ -27,6 +27,16 @@ Built for offline workshops where instructors support learners with AI agents, f
 
 ---
 
+> **Fork notice / フォークについて / 关于分叉**
+>
+> 本リポジトリは落合陽一氏による [ochyai/vibe-local](https://github.com/ochyai/vibe-local)（MIT License）のフォークです。Gemma 4 対応などの改修を加えています。原著作権表示と MIT ライセンスは [LICENSE](LICENSE) にそのまま保持しています。
+>
+> This is a fork of [ochyai/vibe-local](https://github.com/ochyai/vibe-local) by Yoichi Ochiai, licensed under the MIT License. It adds Gemma 4 model support and related improvements. The original copyright and MIT license are preserved unchanged in [LICENSE](LICENSE).
+>
+> 本仓库是落合阳一的 [ochyai/vibe-local](https://github.com/ochyai/vibe-local)（MIT 许可证）的分叉，增加了 Gemma 4 支持等改进。原始版权与 MIT 许可证完整保留于 [LICENSE](LICENSE)。
+
+---
+
 ## 日本語 | [やさしい日本語](#やさしい-にほんご) | [English](#english) | [中文](#中文)
 
 ### これは何？
